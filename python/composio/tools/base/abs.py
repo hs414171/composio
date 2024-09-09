@@ -68,7 +68,7 @@ class ExecuteResponse(BaseModel):
 
 class _Attributes:
     name: str
-    """Name represenation."""
+    """Name representation."""
 
     enum: str
     """Enum key."""
@@ -78,6 +78,9 @@ class _Attributes:
 
     description: str
     """Description string."""
+
+    logo: str
+    """URL for the resource logo."""
 
 
 class _Request(t.Generic[ModelType]):
@@ -111,16 +114,13 @@ class _Request(t.Generic[ModelType]):
                 del prop["type"]  # Remove original type to avoid conflict in oneOf
                 continue
 
-            if (
-                "allOf" in prop
-                and len(prop["allOf"]) == 1
-                and "enum" in prop["allOf"][0]
-            ):
+            if "allOf" in prop and len(prop["allOf"]) == 1:
                 (schema,) = prop.pop("allOf")
                 prop.update(schema)
-                prop[
-                    "description"
-                ] += f" Note: choose value only from following options - {prop['enum']}"
+                if "enum" in schema:
+                    prop[
+                        "description"
+                    ] += f" Note: choose value only from following options - {prop['enum']}"
 
         request["properties"] = properties
         return request
@@ -162,7 +162,7 @@ class _Response(t.Generic[ModelType]):
             )
             error: t.Optional[str] = Field(
                 None,
-                description="Error if any occured during the execution of the action",
+                description="Error if any occurred during the execution of the action",
             )
 
         return t.cast(t.Type[BaseModel], wrapper)
@@ -170,16 +170,53 @@ class _Response(t.Generic[ModelType]):
     def schema(self) -> t.Dict:
         """Build request schema."""
         schema = self.wrapper.model_json_schema(by_alias=True)
+        schema = remove_json_ref(schema)
+        if "$defs" in schema:
+            del schema["$defs"]
+
+        properties = schema.get("properties", {})
+        for prop in properties.values():
+            if prop.get("file_readable", False):
+                prop["oneOf"] = [
+                    {
+                        "type": prop.get("type"),
+                        "description": prop.get("description", ""),
+                    },
+                    {
+                        "type": "string",
+                        "format": "file-path",
+                        "description": f"File path to {prop.get('description', '')}",
+                    },
+                ]
+                del prop["type"]  # Remove original type to avoid conflict in oneOf
+                continue
+
+            if "allOf" in prop and len(prop["allOf"]) == 1:
+                (schema,) = prop.pop("allOf")
+                prop.update(schema)
+                if "enum" in schema:
+                    prop[
+                        "description"
+                    ] += f" Note: choose value only from following options - {prop['enum']}"
+
+        schema["properties"] = properties
         schema["title"] = self.model.__name__
         return remove_json_ref(schema)
 
 
 class ActionBuilder:
     @staticmethod
-    def set_generics(name: str, obj: t.Type["Action"]) -> None:
+    def get_generics(obj: t.Type["Action"]) -> t.Tuple[t.Any, t.Any]:
+        for base in getattr(obj, "__orig_bases__"):
+            args = t.get_args(base)
+            if len(args) == 2:
+                return args  # type: ignore
+        raise ValueError("No type generics found")
+
+    @classmethod
+    def set_generics(cls, name: str, obj: t.Type["Action"]) -> None:
         try:
-            (generic,) = getattr(obj, "__orig_bases__")
-            request, response = t.get_args(generic)
+            request, response = cls.get_generics(obj=obj)
             if request == ActionRequest or response == ActionResponse:
                 raise ValueError(f"Invalid type generics, ({request}, {response})")
         except ValueError as e:
@@ -359,8 +396,13 @@ class ToolBuilder:
         for action in obj.actions():
             action.tool = obj.name
             action.enum = f"{obj.enum}_{action.name.upper()}"
+            if obj.requires is not None:
+                action.requires = list(set(obj.requires + (action.requires or [])))
             obj._actions[action.enum] = action  # pylint: disable=protected-access
             action_registry[obj.gid][action.enum] = action  # type: ignore
+
+            if hasattr(obj, "logo"):
+                setattr(action, "logo", getattr(obj, "logo"))
 
         if not hasattr(obj, "triggers"):
             return
@@ -374,6 +416,9 @@ class ToolBuilder:
             obj._triggers[trigger.enum] = trigger  # type: ignore  # pylint: disable=protected-access
             trigger_registry[obj.gid][trigger.enum] = trigger  # type: ignore
 
+            if hasattr(obj, "logo"):
+                setattr(trigger, "logo", getattr(obj, "logo"))
+
 
 class Tool(WithLogger, _Attributes):
     """Tool abstraction."""
@@ -386,6 +431,9 @@ class Tool(WithLogger, _Attributes):
 
     name: str
     """Tool name."""
+
+    requires: t.Optional[t.List[str]] = None
+    """List of dependencies required for running this tool."""
 
     _schema: t.Optional[t.Dict] = None
     """Schema for the app."""

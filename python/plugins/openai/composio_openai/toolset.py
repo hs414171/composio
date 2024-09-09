@@ -78,7 +78,7 @@ class ComposioToolSet(
         ):
             raise ValueError(
                 "separate `entity_id` can not be provided during "
-                "intialization and handelling tool calls"
+                "initialization and handelling tool calls"
             )
         if self.entity_id != DEFAULT_ENTITY_ID:
             entity_id = self.entity_id
@@ -111,6 +111,7 @@ class ComposioToolSet(
 
         :return: Composio tools wrapped as `ChatCompletionToolParam` objects
         """
+        self.validate_tools(apps=apps, actions=actions, tags=tags)
         return [
             ChatCompletionToolParam(  # type: ignore
                 **t.cast(
@@ -175,7 +176,7 @@ class ComposioToolSet(
         run: Run,
         entity_id: t.Optional[str] = None,
     ) -> t.List:
-        """Wait and handle assisant function calls"""
+        """Wait and handle assistant function calls"""
         tool_outputs = []
         for tool_call in t.cast(
             RequiredAction, run.required_action
@@ -198,7 +199,7 @@ class ComposioToolSet(
         thread: Thread,
         entity_id: t.Optional[str] = None,
     ) -> Run:
-        """Wait and handle assisant function calls"""
+        """Wait and handle assistant function calls"""
         thread_object = thread
         while run.status in ("queued", "in_progress", "requires_action"):
             if run.status == "requires_action":

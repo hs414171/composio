@@ -6,6 +6,7 @@ from composio.tools.base.local import LocalAction
 from composio.tools.local.filetool.actions.base_action import (
     BaseFileRequest,
     BaseFileResponse,
+    include_cwd,
 )
 
 
@@ -42,10 +43,11 @@ class Write(LocalAction[WriteRequest, WriteResponse]):
 
     Note:
         This action will replace the existing content in the the file,
-    and completetly rewrite the file, if you want to edit a specific portion
+    and completely rewrite the file, if you want to edit a specific portion
     of the file use `edit` tool instead.
     """
 
+    @include_cwd  # type: ignore
     def execute(self, request: WriteRequest, metadata: Dict) -> WriteResponse:
         try:
             filemanager = self.filemanagers.get(request.file_manager_id)

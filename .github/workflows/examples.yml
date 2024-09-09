@@ -6,6 +6,14 @@ on:
       working-directory:
         required: true
         type: string
+      api_key:
+        required: false
+        type: string
+      base_url:
+        required: false
+        type: string
+  workflow_dispatch:
+
 
 jobs:
   run-tests:
@@ -45,7 +53,8 @@ jobs:
           OPENAI_API_KEY: ${{secrets.OPENAI_API_KEY}}
           JULEP_API_KEY: ${{secrets.JULEP_API_KEY}}
           JULEP_API_URL: ${{secrets.JULEP_API_URL}}
-          COMPOSIO_API_KEY: ${{secrets.COMPOSIO_API_KEY_RELEASE}}
+          COMPOSIO_API_KEY: ${{ inputs.api_key || secrets.COMPOSIO_API_KEY_RELEASE }}
+          COMPOSIO_BASE_URL: ${{ inputs.base_url || secrets.COMPOSIO_BASE_URL }}
         run: |
           sudo apt-get update --fix-missing
           sudo apt-get autoremove
@@ -59,3 +68,8 @@ jobs:
           composio apps update
 
           CI=false COMPOSIO_BASE_URL=https://backend.composio.dev/api PLUGIN_TO_TEST=${{matrix.package}} pytest -vv tests/test_example.py
+      - name: Slack Notification on Failure
+        if: ${{ failure() && !contains(github.event.pull_request.title, 'release') && !contains(github.event.pull_request.title, 'Release') }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_TECH_WEBHOOK }}
